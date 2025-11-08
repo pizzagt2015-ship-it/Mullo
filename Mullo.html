@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Mullo</title>
+<style>
+    body { margin:0; overflow:hidden; font-family:sans-serif; background:#222; color:white; }
+    canvas { display:block; background:#222; }
+    #mainMenu, #gameUI { position:absolute; top:0; left:0; width:100%; height:100%; display:flex; justify-content:center; align-items:center; flex-direction:column; }
+    #mainMenu { background:#222; }
+    button { padding:10px 20px; margin:10px; font-size:20px; cursor:pointer; }
+    #status { position:absolute; top:10px; left:10px; font-weight:bold; }
+    #usernameContainer { position:absolute; top:10px; right:10px; }
+    #usernameContainer input, #usernameContainer button { margin:2px; padding:5px; }
+</style>
+</head>
+<body>
+
+<!-- Main Menu -->
+<div id="mainMenu">
+    <h1 style="font-size:50px; margin-bottom:50px;">Mullo</h1>
+    <button id="connectBtn">Connect?</button>
+</div>
+
+<!-- Game UI (hidden initially) -->
+<div id="gameUI" style="display:none;">
+    <div id="status">OFFLINE</div>
+    <div id="usernameContainer">
+        <input id="usernameInput" placeholder="Enter username" />
+        <button id="setUsernameBtn">Set Username</button>
+    </div>
+    <canvas id="gameCanvas"></canvas>
+</div>
+
+<script>
+// Elements
+const mainMenu = document.getElementById("mainMenu");
+const connectBtn = document.getElementById("connectBtn");
+const gameUI = document.getElementById("gameUI");
+
+// Switch to game screen
+connectBtn.onclick = () => {
+    mainMenu.style.display = "none";
+    gameUI.style.display = "block";
+    startGame();
+};
+
+function startGame() {
+    const canvas = document.getElementById("gameCanvas");
+    const ctx = canvas.getContext("2d");
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+
+    const statusDiv = document.getElementById("status");
+    const usernameInput = document.getElementById("usernameInput");
+    const setUsernameBtn = document.getElementById("setUsernameBtn");
+
+    const speed = 5;
+    const keys = {};
+    window.addEventListener("keydown", e=>keys[e.key]=true);
+    window.addEventListener("keyup", e=>keys[e.key]=false);
+
+    let localId = Math.random().toString(36).substr(2,5);
+    let username = "Player" + localId;
+    let players = {};
+    players[localId] = {
+        x: Math.random()*canvas.width,
+        y: Math.random()*canvas.height,
+        color: 'lime',
+        username: username
+    };
+
+    let connected = false;
+
+    // BroadcastChannel for same-browser / LAN simulation
+    const channel = new BroadcastChannel('multiplayer');
+    channel.onmessage = e => {
+        players = {...players, ...e.data};
+        if(!connected){
+            connected = true;
+            updateStatus();
+        }
+    };
+
+    // Update ONLINE/OFFLINE status
+    function updateStatus(){
+        if(connected){
+            statusDiv.textContent = "ONLINE";
+            statusDiv.style.color = "lime";
+        } else {
+            statusDiv.textContent = "OFFLINE";
+            statusDiv.style.color = "red";
+        }
+    }
+
+    // Set username
+    setUsernameBtn.onclick = () => {
+        const name = usernameInput.value.trim();
+        if(name) {
+            username = name;
+            players[localId].username = username;
+        }
+    };
+
+    // Broadcast local player data every frame
+    function broadcastPosition(){
+        channel.postMessage({[localId]: players[localId]});
+    }
+
+    // Game logic
+    function movePlayer(){
+        let dx=0, dy=0;
+        if(keys["ArrowUp"]||keys["w"]) dy-=speed;
+        if(keys["ArrowDown"]||keys["s"]) dy+=speed;
+        if(keys["ArrowLeft"]||keys["a"]) dx-=speed;
+        if(keys["ArrowRight"]||keys["d"]) dx+=speed;
+        players[localId].x += dx;
+        players[localId].y += dy;
+    }
+
+    // Draw players and usernames
+    function drawPlayers(){
+        ctx.clearRect(0,0,canvas.width,canvas.height);
+        for(let id in players){
+            const p = players[id];
+            ctx.fillStyle = p.color;
+            ctx.beginPath();
+            ctx.arc(p.x,p.y,20,0,Math.PI*2);
+            ctx.fill();
+            ctx.fillStyle = "white";
+            ctx.font = "16px Arial";
+            ctx.textAlign = "center";
+            ctx.fillText(p.username, p.x, p.y - 30);
+        }
+    }
+
+    // Main loop
+    function gameLoop(){
+        movePlayer();
+        broadcastPosition();
+        drawPlayers();
+        requestAnimationFrame(gameLoop);
+    }
+
+    gameLoop();
+    updateStatus();
+}
+</script>
+
+</body>
+</html>
