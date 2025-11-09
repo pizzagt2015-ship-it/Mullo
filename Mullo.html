@@ -2,79 +2,93 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Mullo LAN</title>
+<title>Mullo</title>
 <style>
-body{margin:0;overflow:hidden;background:#222;color:white;font-family:sans-serif}
-canvas{display:block;background:#222}
-#ui{position:absolute;top:10px;left:10px;color:white;font-family:sans-serif}
-button,input{font-size:16px;margin:5px;padding:5px}
+body { margin:0; overflow:hidden; font-family:sans-serif; background:#222; color:white; }
+canvas { display:block; background:#222; }
+#status { position:absolute; top:10px; left:10px; font-weight:bold; }
+#usernameContainer { position:absolute; top:10px; right:10px; }
+#usernameContainer input, #usernameContainer button { margin:2px; padding:5px; }
 </style>
 </head>
 <body>
-<div id="ui">
-<span id="status">OFFLINE</span><br>
-<span id="deviceCode"></span><br>
-<input id="joinCode" placeholder="Enter 5-digit code"/>
-<button id="joinBtn">Join</button>
+
+<div id="status">OFFLINE</div>
+<div id="usernameContainer">
+<input id="usernameInput" placeholder="Enter username" />
+<button id="setUsernameBtn">Set Username</button>
 </div>
 <canvas id="gameCanvas"></canvas>
 
+<script src="/socket.io/socket.io.js"></script>
 <script>
-// --- Setup Canvas ---
 const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
 canvas.width = window.innerWidth;
 canvas.height = window.innerHeight;
 
-// --- Game Data ---
+const statusDiv = document.getElementById("status");
+const usernameInput = document.getElementById("usernameInput");
+const setUsernameBtn = document.getElementById("setUsernameBtn");
+
+const socket = io(); // connect to server
+
+let localId;
 let players = {};
-let localId = Math.random().toString(36).substring(2,6);
-players[localId] = {x:Math.random()*500,y:Math.random()*500,color:getRandomColor()};
 
-// --- Device Code UI ---
-const statusEl = document.getElementById("status");
-const deviceCodeEl = document.getElementById("deviceCode");
-deviceCodeEl.innerText = `Your device code: ${localId}`;
-statusEl.innerText = "ONLINE";
+// Handle connection
+socket.on("connect", () => {
+    localId = socket.id;
+    statusDiv.textContent = "ONLINE";
+    statusDiv.style.color = "lime";
+});
 
-// --- Join Button ---
-document.getElementById("joinBtn").onclick = () => {
-    const code = document.getElementById("joinCode").value.trim();
-    if(code && code !== localId){
-        // Spawn a new player
-        players[code] = {x:Math.random()*500,y:Math.random()*500,color:getRandomColor()};
-    }
-};
+socket.on("disconnect", () => {
+    statusDiv.textContent = "OFFLINE";
+    statusDiv.style.color = "red";
+});
 
-// --- Movement ---
+// Update all players
+socket.on("playersUpdate", data => {
+    players = data;
+});
+
+// Movement
 const keys = {};
-window.addEventListener("keydown",e=>keys[e.key]=true);
-window.addEventListener("keyup",e=>keys[e.key]=false);
-const speed = 5;
+window.addEventListener("keydown", e => keys[e.key] = true);
+window.addEventListener("keyup", e => keys[e.key] = false);
 
-// --- Draw Loop ---
-function drawPlayers(){
-    ctx.clearRect(0,0,canvas.width,canvas.height);
-    for(let id in players){
-        const p = players[id];
-        ctx.fillStyle = p.color;
-        ctx.beginPath();
-        ctx.arc(p.x,p.y,20,0,Math.PI*2);
-        ctx.fill();
-        ctx.fillStyle="white";
-        ctx.font="16px Arial";
-        ctx.textAlign="center";
-        ctx.fillText(id,p.x,p.y-30);
-    }
+const speed = 5;
+function movePlayer() {
+    if(!localId) return;
+    let dx = 0, dy = 0;
+    if(keys["ArrowUp"]||keys["w"]) dy -= speed;
+    if(keys["ArrowDown"]||keys["s"]) dy += speed;
+    if(keys["ArrowLeft"]||keys["a"]) dx -= speed;
+    if(keys["ArrowRight"]||keys["d"]) dx += speed;
+    if(dx!==0 || dy!==0) socket.emit("move", {dx, dy});
 }
 
-function movePlayer(){
-    const p = players[localId];
-    if(!p) return;
-    if(keys["ArrowUp"]||keys["w"]) p.y -= speed;
-    if(keys["ArrowDown"]||keys["s"]) p.y += speed;
-    if(keys["ArrowLeft"]||keys["a"]) p.x -= speed;
-    if(keys["ArrowRight"]||keys["d"]) p.x += speed;
+// Set username
+setUsernameBtn.onclick = () => {
+    const name = usernameInput.value.trim();
+    if(name) socket.emit("setUsername", name);
+};
+
+// Draw players
+function drawPlayers() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    for(let id in players){
+        const p = players[id];
+        ctx.fillStyle = p.color || "#"+Math.floor(Math.random()*16777215).toString(16);
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 20, 0, Math.PI*2);
+        ctx.fill();
+        ctx.fillStyle = "white";
+        ctx.font = "16px Arial";
+        ctx.textAlign = "center";
+        ctx.fillText(p.username || id, p.x, p.y-30);
+    }
 }
 
 function gameLoop(){
@@ -84,14 +98,6 @@ function gameLoop(){
 }
 
 gameLoop();
-
-// --- Random Color ---
-function getRandomColor(){
-    const letters="0123456789ABCDEF";
-    let color="#";
-    for(let i=0;i<6;i++) color+=letters[Math.floor(Math.random()*16)];
-    return color;
-}
 </script>
 </body>
 </html>
