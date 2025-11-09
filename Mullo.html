@@ -2,136 +2,96 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Mullo</title>
+<title>Mullo LAN</title>
 <style>
-body { margin:0; overflow:hidden; font-family:sans-serif; background:#222; color:white; }
-canvas { display:block; background:#222; }
-#mainMenu, #gameUI { position:absolute; top:0; left:0; width:100%; height:100%; display:flex; justify-content:center; align-items:center; flex-direction:column; }
-#mainMenu { background:#222; }
-button { padding:10px 20px; margin:10px; font-size:20px; cursor:pointer; }
-#status { position:absolute; top:10px; left:10px; font-weight:bold; }
-#usernameContainer { position:absolute; top:10px; right:10px; }
-#usernameContainer input, #usernameContainer button { margin:2px; padding:5px; }
+body{margin:0;overflow:hidden;background:#222;color:white;font-family:sans-serif}
+canvas{display:block;background:#222}
+#ui{position:absolute;top:10px;left:10px;color:white;font-family:sans-serif}
+button,input{font-size:16px;margin:5px;padding:5px}
 </style>
 </head>
 <body>
-
-<div id="mainMenu">
-    <h1 style="font-size:50px; margin-bottom:50px;">Mullo</h1>
-    <button id="connectBtn">Connect?</button>
+<div id="ui">
+<span id="status">OFFLINE</span><br>
+<span id="deviceCode"></span><br>
+<input id="joinCode" placeholder="Enter 5-digit code"/>
+<button id="joinBtn">Join</button>
 </div>
-
-<div id="gameUI" style="display:none;">
-    <div id="status">OFFLINE</div>
-    <div id="usernameContainer">
-        <input id="usernameInput" placeholder="Enter username" />
-        <button id="setUsernameBtn">Set Username</button>
-    </div>
-    <canvas id="gameCanvas"></canvas>
-</div>
+<canvas id="gameCanvas"></canvas>
 
 <script>
-const mainMenu = document.getElementById("mainMenu");
-const connectBtn = document.getElementById("connectBtn");
-const gameUI = document.getElementById("gameUI");
+// --- Setup Canvas ---
+const canvas = document.getElementById("gameCanvas");
+const ctx = canvas.getContext("2d");
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
 
-connectBtn.onclick = () => {
-    mainMenu.style.display = "none";
-    gameUI.style.display = "block";
-    startGame();
+// --- Game Data ---
+let players = {};
+let localId = Math.random().toString(36).substring(2,6);
+players[localId] = {x:Math.random()*500,y:Math.random()*500,color:getRandomColor()};
+
+// --- Device Code UI ---
+const statusEl = document.getElementById("status");
+const deviceCodeEl = document.getElementById("deviceCode");
+deviceCodeEl.innerText = `Your device code: ${localId}`;
+statusEl.innerText = "ONLINE";
+
+// --- Join Button ---
+document.getElementById("joinBtn").onclick = () => {
+    const code = document.getElementById("joinCode").value.trim();
+    if(code && code !== localId){
+        // Spawn a new player
+        players[code] = {x:Math.random()*500,y:Math.random()*500,color:getRandomColor()};
+    }
 };
 
-function startGame(){
-    const canvas = document.getElementById("gameCanvas");
-    const ctx = canvas.getContext("2d");
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
+// --- Movement ---
+const keys = {};
+window.addEventListener("keydown",e=>keys[e.key]=true);
+window.addEventListener("keyup",e=>keys[e.key]=false);
+const speed = 5;
 
-    const statusDiv = document.getElementById("status");
-    const usernameInput = document.getElementById("usernameInput");
-    const setUsernameBtn = document.getElementById("setUsernameBtn");
-
-    // Create a unique ID for this player
-    const localId = Math.random().toString(36).substring(2,9);
-    let username = "Player" + localId;
-    const color = getRandomColor();
-
-    // Players object synced across tabs
-    let players = {};
-    players[localId] = { x: Math.random()*canvas.width, y: Math.random()*canvas.height, color, username };
-
-    // BroadcastChannel to sync players
-    const channel = new BroadcastChannel("mullo");
-    channel.onmessage = e => {
-        players = { ...players, ...e.data };
-        statusDiv.textContent = "ONLINE";
-        statusDiv.style.color = "lime";
-    };
-
-    // Movement
-    const keys = {};
-    window.addEventListener("keydown", e=>keys[e.key]=true);
-    window.addEventListener("keyup", e=>keys[e.key]=false);
-
-    const speed = 5;
-    function movePlayer(){
-        let dx=0, dy=0;
-        if(keys["ArrowUp"]||keys["w"]) dy -= speed;
-        if(keys["ArrowDown"]||keys["s"]) dy += speed;
-        if(keys["ArrowLeft"]||keys["a"]) dx -= speed;
-        if(keys["ArrowRight"]||keys["d"]) dx += speed;
-        players[localId].x += dx;
-        players[localId].y += dy;
+// --- Draw Loop ---
+function drawPlayers(){
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    for(let id in players){
+        const p = players[id];
+        ctx.fillStyle = p.color;
+        ctx.beginPath();
+        ctx.arc(p.x,p.y,20,0,Math.PI*2);
+        ctx.fill();
+        ctx.fillStyle="white";
+        ctx.font="16px Arial";
+        ctx.textAlign="center";
+        ctx.fillText(id,p.x,p.y-30);
     }
-
-    // Username change
-    setUsernameBtn.onclick = () => {
-        const name = usernameInput.value.trim();
-        if(name){
-            username = name;
-            players[localId].username = username;
-        }
-    };
-
-    // Broadcast local player position and username
-    function broadcast(){
-        channel.postMessage({ [localId]: players[localId] });
-    }
-
-    // Draw all players
-    function drawPlayers(){
-        ctx.clearRect(0,0,canvas.width,canvas.height);
-        for(let id in players){
-            const p = players[id];
-            ctx.fillStyle = p.color;
-            ctx.beginPath();
-            ctx.arc(p.x,p.y,20,0,Math.PI*2);
-            ctx.fill();
-            ctx.fillStyle = "white";
-            ctx.font = "16px Arial";
-            ctx.textAlign = "center";
-            ctx.fillText(p.username, p.x, p.y-30);
-        }
-    }
-
-    function gameLoop(){
-        movePlayer();
-        broadcast();
-        drawPlayers();
-        requestAnimationFrame(gameLoop);
-    }
-
-    gameLoop();
 }
 
-// Random color generator
+function movePlayer(){
+    const p = players[localId];
+    if(!p) return;
+    if(keys["ArrowUp"]||keys["w"]) p.y -= speed;
+    if(keys["ArrowDown"]||keys["s"]) p.y += speed;
+    if(keys["ArrowLeft"]||keys["a"]) p.x -= speed;
+    if(keys["ArrowRight"]||keys["d"]) p.x += speed;
+}
+
+function gameLoop(){
+    movePlayer();
+    drawPlayers();
+    requestAnimationFrame(gameLoop);
+}
+
+gameLoop();
+
+// --- Random Color ---
 function getRandomColor(){
-    const letters = "0123456789ABCDEF";
-    let color = "#";
-    for(let i=0;i<6;i++) color += letters[Math.floor(Math.random()*16)];
+    const letters="0123456789ABCDEF";
+    let color="#";
+    for(let i=0;i<6;i++) color+=letters[Math.floor(Math.random()*16)];
     return color;
 }
 </script>
-
 </body>
 </html>
